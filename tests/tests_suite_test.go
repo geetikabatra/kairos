@@ -3,6 +3,7 @@ package mos_test
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"testing"
@@ -34,6 +35,20 @@ var tempDir string
 var sshPort string
 
 var machineID string = os.Getenv("MACHINE_ID")
+
+// https://gist.github.com/sevkin/96bdae9274465b2d09191384f86ef39d
+// GetFreePort asks the kernel for a free open port that is ready to use.
+func getFreePort() (port int, err error) {
+	var a *net.TCPAddr
+	if a, err = net.ResolveTCPAddr("tcp", "localhost:0"); err == nil {
+		var l *net.TCPListener
+		if l, err = net.ListenTCP("tcp", a); err == nil {
+			defer l.Close()
+			return l.Addr().(*net.TCPAddr).Port, nil
+		}
+	}
+	return
+}
 
 var _ = AfterSuite(func() {
 	if os.Getenv("CREATE_VM") == "true" && os.Getenv("KEEP_VM") != "true" {
@@ -84,14 +99,17 @@ var _ = BeforeSuite(func() {
 		fmt.Printf("State dir = %+v\n", t)
 		Expect(err).ToNot(HaveOccurred())
 
-		sshPort = "2222"
+		Port := ""
 		if os.Getenv("SSH_PORT") != "" {
-			sshPort = os.Getenv("SSH_PORT")
+			Port = os.Getenv("SSH_PORT")
+		} else {
+			sshPort, _ := getFreePort()
+			Port = fmt.Sprintf("%d", sshPort)
 		}
 
 		opts := []types.MachineOption{
 			types.WithISO(os.Getenv("ISO")),
-			types.WithSSHPort(sshPort),
+			types.WithSSHPort(Port),
 			types.WithID(machineID),
 			types.WithSSHUser(user()),
 			types.WithSSHPass(pass()),
@@ -110,13 +128,15 @@ var _ = BeforeSuite(func() {
 
 		if os.Getenv("USE_QEMU") == "true" {
 			opts = append(opts, types.QEMUEngine)
+			// DISPLAY is already taken on Linux X sessions
+			if os.Getenv("MACHINE_DISPLAY") == "true" {
+				port, _ := getFreePort()
+				display := fmt.Sprintf("-vga qxl -spice port=%d,addr=127.0.0.1,disable-ticketing=yes", port)
+				opts = append(opts, types.WithDisplay(display))
+
+			}
 		} else {
 			opts = append(opts, types.VBoxEngine)
-		}
-
-		display := os.Getenv("MACHINE_DISPLAY") // display is already taken on Linux X sessions
-		if display != "" {
-			opts = append(opts, types.WithDisplay(display))
 		}
 
 		memory := os.Getenv("MEMORY")

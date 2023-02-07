@@ -52,6 +52,11 @@ var _ = Describe("kairos install test", Label("install-test"), func() {
 
 	AfterEach(func() {
 		Machine.Clean()
+		mc := Machine.Config()
+		port, _ := getFreePort()
+		mc.Display = fmt.Sprintf("-vga qxl -spice port=%d,addr=127.0.0.1,disable-ticketing=yes", port)
+		port, _ = getFreePort()
+		mc.SSH.Port = fmt.Sprintf("%d", port)
 		Machine.Create(context.Background())
 		EventuallyConnects(1200)
 	})
