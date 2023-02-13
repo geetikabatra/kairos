@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	process "github.com/mudler/go-processmanager"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -85,89 +88,6 @@ func pass() string {
 
 var _ = BeforeSuite(func() {
 
-	if machineID == "" {
-		machineID = "testvm"
-	}
-
-	if os.Getenv("ISO") == "" && os.Getenv("CREATE_VM") == "true" {
-		fmt.Println("ISO missing")
-		os.Exit(1)
-	}
-
-	if os.Getenv("CREATE_VM") == "true" {
-		t, err := os.MkdirTemp("", "")
-		fmt.Printf("State dir = %+v\n", t)
-		Expect(err).ToNot(HaveOccurred())
-
-		Port := ""
-		if os.Getenv("SSH_PORT") != "" {
-			Port = os.Getenv("SSH_PORT")
-		} else {
-			sshPort, _ := getFreePort()
-			Port = fmt.Sprintf("%d", sshPort)
-		}
-
-		opts := []types.MachineOption{
-			types.WithISO(os.Getenv("ISO")),
-			types.WithSSHPort(Port),
-			types.WithID(machineID),
-			types.WithSSHUser(user()),
-			types.WithSSHPass(pass()),
-			types.OnFailure(func(p *process.Process) {
-				defer GinkgoRecover()
-				out, _ := os.ReadFile(p.StdoutPath())
-				err, _ := os.ReadFile(p.StderrPath())
-				status, _ := p.ExitCode()
-				// Ginkgo doesn't print?
-				fmt.Printf("VM Aborted: %s %s Exit status: %s", out, err, status)
-				Fail(fmt.Sprintf("VM Aborted: %s %s Exit status: %s", out, err, status))
-			}),
-			types.WithStateDir(t),
-			types.WithDataSource(os.Getenv("DATASOURCE")),
-		}
-
-		if os.Getenv("USE_QEMU") == "true" {
-			opts = append(opts, types.QEMUEngine)
-			// DISPLAY is already taken on Linux X sessions
-			if os.Getenv("MACHINE_DISPLAY") == "true" {
-				port, _ := getFreePort()
-				display := fmt.Sprintf("-vga qxl -spice port=%d,addr=127.0.0.1,disable-ticketing=yes", port)
-				opts = append(opts, types.WithDisplay(display))
-
-			}
-		} else {
-			opts = append(opts, types.VBoxEngine)
-		}
-
-		memory := os.Getenv("MEMORY")
-		if memory != "" {
-			opts = append(opts, types.WithMemory(os.Getenv("MEMORY")))
-		}
-		cpu := os.Getenv("CPU")
-		if cpu != "" {
-			opts = append(opts, types.WithCPU(cpu))
-		}
-
-		if os.Getenv("KVM") == "true" {
-			opts = append(opts, func(m *types.MachineConfig) error {
-				m.Args = append(m.Args,
-					"-enable-kvm",
-				)
-				return nil
-			})
-		}
-
-		m, err := machine.New(opts...)
-		if err != nil {
-			Fail(err.Error())
-		}
-
-		Machine = m
-
-		if err := Machine.Create(context.Background()); err != nil {
-			Fail(err.Error())
-		}
-	}
 })
 
 func gatherLogs() {
@@ -199,6 +119,101 @@ func gatherLogs() {
 			"/run/events.json",
 			"/run/cmdline",
 		})
+}
+
+func startVM() VM {
+	if os.Getenv("ISO") == "" && os.Getenv("CREATE_VM") == "true" {
+		fmt.Println("ISO missing")
+		os.Exit(1)
+	}
+
+	vmName := uuid.New().String()
+
+	stateDir, err := os.MkdirTemp("", "")
+	Expect(err).ToNot(HaveOccurred())
+
+	sshPort, err := getFreePort()
+	Expect(err).ToNot(HaveOccurred())
+
+	memory := os.Getenv("MEMORY")
+	if memory == "" {
+		memory = "2096"
+	}
+	cpus := os.Getenv("CPUS")
+	if cpus == "" {
+		cpus = "2"
+	}
+
+	opts := []types.MachineOption{
+		types.QEMUEngine,
+		types.WithISO(os.Getenv("ISO")),
+		types.WithMemory(memory),
+		types.WithCPU(cpus),
+		types.WithSSHPort(strconv.Itoa(sshPort)),
+		types.WithID(vmName),
+		types.WithSSHUser(user()),
+		types.WithSSHPass(pass()),
+		types.OnFailure(func(p *process.Process) {
+			out, _ := os.ReadFile(p.StdoutPath())
+			err, _ := os.ReadFile(p.StderrPath())
+			status, _ := p.ExitCode()
+
+			// We are explicitly killing the qemu process. We don't treat that as an error
+			// but we just print the output just in case.
+			fmt.Printf("\nVM Aborted: %s %s Exit status: %s\n", out, err, status)
+		}),
+		types.WithStateDir(stateDir),
+		types.WithDataSource(os.Getenv("DATASOURCE")),
+	}
+
+	// Set this to true to debug.
+	// You can connect to it with "spicy" or other tool.
+	var spicePort int
+	if os.Getenv("MACHINE_SPICY") != "" {
+		spicePort, err = getFreePort()
+		Expect(err).ToNot(HaveOccurred())
+		fmt.Printf("Spice port = %d\n", spicePort)
+		opts = append(opts, types.WithDisplay(fmt.Sprintf("-spice port=%d,addr=127.0.0.1,disable-ticketing", spicePort)))
+	}
+
+	if os.Getenv("KVM") != "" {
+		opts = append(opts, func(m *types.MachineConfig) error {
+			m.Args = append(m.Args,
+				"-enable-kvm",
+			)
+			return nil
+		})
+	}
+
+	if os.Getenv("USE_QEMU") == "true" {
+		opts = append(opts, types.QEMUEngine)
+		// DISPLAY is already taken on Linux X sessions
+		if os.Getenv("MACHINE_DISPLAY") == "true" {
+			port, _ := getFreePort()
+			display := fmt.Sprintf("-vga qxl -spice port=%d,addr=127.0.0.1,disable-ticketing=yes", port)
+			opts = append(opts, types.WithDisplay(display))
+
+		}
+	} else {
+		opts = append(opts, types.VBoxEngine)
+	}
+	m, err := machine.New(opts...)
+	Expect(err).ToNot(HaveOccurred())
+
+	vm := NewVM(m, stateDir)
+
+	err = vm.Start(context.Background())
+	Expect(err).ToNot(HaveOccurred())
+
+	if os.Getenv("MACHINE_SPICY") != "" {
+		cmd := exec.Command("spicy",
+			"-h", "127.0.0.1",
+			"-p", strconv.Itoa(spicePort))
+		err = cmd.Start()
+		Expect(err).ToNot(HaveOccurred())
+	}
+
+	return vm
 }
 
 func isFlavor(flavor string) bool {

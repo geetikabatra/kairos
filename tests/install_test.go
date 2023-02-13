@@ -44,10 +44,14 @@ func eventuallyAssert(cmd string, m types.GomegaMatcher) {
 	}, 5*time.Minute, 10*time.Second).Should(m)
 }
 
+var vm VM
+
 var _ = Describe("kairos install test", Label("install-test"), func() {
 
 	BeforeEach(func() {
-		EventuallyConnects(1200)
+
+		vm = startVM()
+		vm.EventuallyConnects(1200)
 	})
 
 	AfterEach(func() {
