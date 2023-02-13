@@ -90,7 +90,7 @@ var _ = Describe("kairos reset test", Label("reset-test"), func() {
 			_, err = vm.Sudo("grub2-editenv /oem/grubenv set next_entry=statereset")
 			Expect(err).ToNot(HaveOccurred())
 
-			Reboot()
+			vm.Reboot()
 
 			Eventually(func() string {
 				out, _ := vm.Sudo("if [ -f /usr/local/test ]; then echo ok; else echo wrong; fi")
