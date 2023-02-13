@@ -53,22 +53,6 @@ func getFreePort() (port int, err error) {
 	return
 }
 
-var _ = AfterSuite(func() {
-	if os.Getenv("CREATE_VM") == "true" && os.Getenv("KEEP_VM") != "true" {
-		fmt.Printf("Deleting VM ... %s\n", Machine.Config().StateDir)
-		if Machine != nil {
-			Machine.Stop()
-			Machine.Clean()
-		}
-	}
-	if !CurrentSpecReport().Failure.IsZero() {
-		gatherLogs()
-	}
-	if os.Getenv("CREATE_VM") == "true" && os.Getenv("KEEP_VM") == "true" {
-		fmt.Println("WARNING: Not cleaning", Machine.Config().StateDir)
-	}
-})
-
 func user() string {
 	user := os.Getenv("SSH_USER")
 	if user == "" {
@@ -127,12 +111,14 @@ func startVM() VM {
 		os.Exit(1)
 	}
 
+	var sshPort, spicePort int
+
 	vmName := uuid.New().String()
 
 	stateDir, err := os.MkdirTemp("", "")
 	Expect(err).ToNot(HaveOccurred())
 
-	sshPort, err := getFreePort()
+	sshPort, err = getFreePort()
 	Expect(err).ToNot(HaveOccurred())
 
 	memory := os.Getenv("MEMORY")
@@ -166,16 +152,6 @@ func startVM() VM {
 		types.WithDataSource(os.Getenv("DATASOURCE")),
 	}
 
-	// Set this to true to debug.
-	// You can connect to it with "spicy" or other tool.
-	var spicePort int
-	if os.Getenv("MACHINE_SPICY") != "" {
-		spicePort, err = getFreePort()
-		Expect(err).ToNot(HaveOccurred())
-		fmt.Printf("Spice port = %d\n", spicePort)
-		opts = append(opts, types.WithDisplay(fmt.Sprintf("-spice port=%d,addr=127.0.0.1,disable-ticketing", spicePort)))
-	}
-
 	if os.Getenv("KVM") != "" {
 		opts = append(opts, func(m *types.MachineConfig) error {
 			m.Args = append(m.Args,
@@ -187,10 +163,15 @@ func startVM() VM {
 
 	if os.Getenv("USE_QEMU") == "true" {
 		opts = append(opts, types.QEMUEngine)
+
+		// You can connect to it with "spicy" or other tool.
 		// DISPLAY is already taken on Linux X sessions
 		if os.Getenv("MACHINE_DISPLAY") == "true" {
-			port, _ := getFreePort()
-			display := fmt.Sprintf("-vga qxl -spice port=%d,addr=127.0.0.1,disable-ticketing=yes", port)
+			spicePort, _ = getFreePort()
+			for spicePort == sshPort { // avoid collision
+				spicePort, _ = getFreePort()
+			}
+			display := fmt.Sprintf("-vga qxl -spice port=%d,addr=127.0.0.1,disable-ticketing=yes", spicePort)
 			opts = append(opts, types.WithDisplay(display))
 
 		}

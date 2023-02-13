@@ -13,7 +13,7 @@ import (
 )
 
 var stateAssert = func(query, expected string) {
-	out, err := Sudo(fmt.Sprintf("kairos-agent state get %s", query))
+	out, err := vm.Sudo(fmt.Sprintf("kairos-agent state get %s", query))
 	ExpectWithOffset(1, err).ToNot(HaveOccurred())
 	ExpectWithOffset(1, out).To(ContainSubstring(expected))
 }

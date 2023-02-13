@@ -1,7 +1,6 @@
 package mos_test
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
@@ -13,10 +12,16 @@ import (
 	"github.com/onsi/gomega/types"
 )
 
+var stateAssertVM = func(vm VM, query, expected string) {
+	out, err := vm.Sudo(fmt.Sprintf("kairos-agent state get %s", query))
+	ExpectWithOffset(1, err).ToNot(HaveOccurred())
+	ExpectWithOffset(1, out).To(ContainSubstring(expected))
+}
+
 func testInstall(cloudConfig string) { //, actual interface{}, m types.GomegaMatcher) {
-	out, _ := Sudo(fmt.Sprintf("kairos-agent state get persistent.found"))
+	out, _ := vm.Sudo(fmt.Sprintf("kairos-agent state get persistent.found"))
 	fmt.Printf("persistent.found: %s\n", out)
-	stateAssert("persistent.found", "false")
+	stateAssertVM(vm, "persistent.found", "false")
 
 	t, err := os.CreateTemp("", "test")
 	ExpectWithOffset(1, err).ToNot(HaveOccurred())
@@ -25,21 +30,21 @@ func testInstall(cloudConfig string) { //, actual interface{}, m types.GomegaMat
 	err = os.WriteFile(t.Name(), []byte(cloudConfig), os.ModePerm)
 	Expect(err).ToNot(HaveOccurred())
 
-	err = Machine.SendFile(t.Name(), "/tmp/config.yaml", "0770")
+	err = vm.Scp(t.Name(), "/tmp/config.yaml", "0770")
 	Expect(err).ToNot(HaveOccurred())
 
-	out, err = Sudo(`kairos-agent manual-install --device "auto" /tmp/config.yaml`)
+	out, err = vm.Sudo(`kairos-agent manual-install --device "auto" /tmp/config.yaml`)
 	Expect(err).ToNot(HaveOccurred(), out)
 	Expect(out).Should(ContainSubstring("Running after-install hook"))
-	Sudo("sync")
+	vm.Sudo("sync")
 
-	detachAndReboot()
-	EventuallyConnects(1200)
+	vm.Reboot()
+	vm.EventuallyConnects(1200)
 }
 
 func eventuallyAssert(cmd string, m types.GomegaMatcher) {
 	Eventually(func() string {
-		out, _ := Sudo(cmd)
+		out, _ := vm.Sudo(cmd)
 		return out
 	}, 5*time.Minute, 10*time.Second).Should(m)
 }
@@ -55,14 +60,7 @@ var _ = Describe("kairos install test", Label("install-test"), func() {
 	})
 
 	AfterEach(func() {
-		Machine.Clean()
-		mc := Machine.Config()
-		port, _ := getFreePort()
-		mc.Display = fmt.Sprintf("-vga qxl -spice port=%d,addr=127.0.0.1,disable-ticketing=yes", port)
-		port, _ = getFreePort()
-		mc.SSH.Port = fmt.Sprintf("%d", port)
-		Machine.Create(context.Background())
-		EventuallyConnects(1200)
+		vm.Destroy(func(vm VM) {})
 	})
 
 	Context("install", func() {
@@ -95,25 +93,25 @@ bundles:
 			fmt.Println("Installation succeeded")
 
 			Eventually(func() string {
-				out, _ := Sudo("cat /etc/foo")
+				out, _ := vm.Sudo("cat /etc/foo")
 				return out
 			}, 5*time.Minute, 10*time.Second).Should(ContainSubstring("bar"))
 
 			Eventually(func() string {
-				out, _ := Sudo("cat /run/cos/cos-layout.env")
+				out, _ := vm.Sudo("cat /run/cos/cos-layout.env")
 				return out
 			}, 5*time.Minute, 10*time.Second).Should(ContainSubstring("CUSTOM_BIND_MOUNTS=\"/mnt/bind1 /mnt/bind2\""))
 			Eventually(func() string {
-				out, _ := Sudo("cat /run/cos/cos-layout.env")
+				out, _ := vm.Sudo("cat /run/cos/cos-layout.env")
 				return out
 			}, 5*time.Minute, 10*time.Second).Should(ContainSubstring("CUSTOM_EPHEMERAL_MOUNTS=\"/mnt/ephemeral /mnt/ephemeral2\""))
 
 			Eventually(func() string {
-				out, _ := Sudo("/usr/local/bin/usr/bin/edgevpn --help | grep peer")
+				out, _ := vm.Sudo("/usr/local/bin/usr/bin/edgevpn --help | grep peer")
 				return out
 			}, 5*time.Minute, 10*time.Second).Should(ContainSubstring("peerguard"))
 
-			stateAssert("persistent.found", "true")
+			stateAssertVM(vm, "persistent.found", "true")
 		})
 
 		It("with config_url", func() {
@@ -123,7 +121,7 @@ bundles:
 			fmt.Println("Installation with config_url succeeded")
 
 			Eventually(func() string {
-				out, _ := Sudo("/usr/local/bin/usr/bin/edgevpn --help | grep peer")
+				out, _ := vm.Sudo("/usr/local/bin/usr/bin/edgevpn --help | grep peer")
 				return out
 			}, 5*time.Minute, 10*time.Second).Should(ContainSubstring("peerguard"))
 		})
