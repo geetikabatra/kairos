@@ -12,12 +12,13 @@ import (
 )
 
 var _ = Describe("kairos bundles test", Label("bundles-test"), func() {
+	var vm VM
 	BeforeEach(func() {
 		if os.Getenv("CLOUD_INIT") == "" || !filepath.IsAbs(os.Getenv("CLOUD_INIT")) {
 			Fail("CLOUD_INIT must be set and must be pointing to a file as an absolute path")
 		}
-
-		EventuallyConnects(1200)
+		vm = startVM()
+		vm.EventuallyConnects(1200)
 	})
 
 	AfterEach(func() {
@@ -29,7 +30,7 @@ var _ = Describe("kairos bundles test", Label("bundles-test"), func() {
 	Context("live cd", func() {
 		It("has default service active", func() {
 			if isFlavor("alpine") {
-				out, _ := Sudo("rc-status")
+				out, _ := vm.Sudo("rc-status")
 				Expect(out).Should(ContainSubstring("kairos"))
 				Expect(out).Should(ContainSubstring("kairos-agent"))
 				fmt.Println(out)
@@ -39,21 +40,21 @@ var _ = Describe("kairos bundles test", Label("bundles-test"), func() {
 				// 	return out
 				// }, 30*time.Second, 10*time.Second).Should(ContainSubstring("no network token"))
 
-				out, _ := Machine.Command("sudo systemctl status kairos")
+				out, _ := vm.Sudo("systemctl status kairos")
 				Expect(out).Should(ContainSubstring("loaded (/etc/systemd/system/kairos.service; enabled;"))
 				fmt.Println(out)
 			}
 
 			// Debug output
-			out, _ := Sudo("ls -liah /oem")
+			out, _ := vm.Sudo("ls -liah /oem")
 			fmt.Println(out)
 			//	Expect(out).To(ContainSubstring("userdata.yaml"))
-			out, _ = Sudo("cat /oem/userdata")
+			out, _ = vm.Sudo("cat /oem/userdata")
 			fmt.Println(out)
-			out, _ = Sudo("sudo ps aux")
+			out, _ = vm.Sudo("ps aux")
 			fmt.Println(out)
 
-			out, _ = Sudo("sudo lsblk")
+			out, _ = vm.Sudo("lsblk")
 			fmt.Println(out)
 
 		})
@@ -62,7 +63,7 @@ var _ = Describe("kairos bundles test", Label("bundles-test"), func() {
 	Context("auto installs", func() {
 		It("to disk with custom config", func() {
 			Eventually(func() string {
-				out, _ := Sudo("ps aux")
+				out, _ := vm.Sudo("ps aux")
 				return out
 			}, 30*time.Minute, 1*time.Second).Should(
 				Or(
@@ -77,7 +78,7 @@ var _ = Describe("kairos bundles test", Label("bundles-test"), func() {
 			By("checking after-install hook triggered")
 
 			Eventually(func() string {
-				out, _ := Sudo("sudo cat /oem/grubenv")
+				out, _ := vm.Sudo("cat /oem/grubenv")
 				return out
 			}, 40*time.Minute, 1*time.Second).Should(
 				Or(
@@ -88,7 +89,7 @@ var _ = Describe("kairos bundles test", Label("bundles-test"), func() {
 		It("has custom cmdline", func() {
 			By("waiting reboot and checking cmdline is present")
 			Eventually(func() string {
-				out, _ := Sudo("sudo cat /proc/cmdline")
+				out, _ := vm.Sudo("cat /proc/cmdline")
 				return out
 			}, 30*time.Minute, 1*time.Second).Should(
 				Or(
@@ -104,13 +105,13 @@ var _ = Describe("kairos bundles test", Label("bundles-test"), func() {
 			// 	Or(
 			// 		ContainSubstring("kubo"),
 			// 	))
-			syset, err := Sudo("systemd-sysext")
-			ls, _ := Sudo("ls -liah /usr/local/lib/extensions")
+			syset, err := vm.Sudo("systemd-sysext")
+			ls, _ := vm.Sudo("ls -liah /usr/local/lib/extensions")
 			fmt.Println("LS:", ls)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(syset).To(ContainSubstring("kubo"))
 
-			ipfsV, err := Sudo("ipfs version")
+			ipfsV, err := vm.Sudo("ipfs version")
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(ipfsV).To(ContainSubstring("0.15.0"))

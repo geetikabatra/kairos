@@ -1,22 +1,21 @@
 package mos_test
 
 import (
-	"context"
-
 	. "github.com/spectrocloud/peg/matcher"
 
 	. "github.com/onsi/ginkgo/v2"
 )
 
 var _ = Describe("kairos netboot test", Label("netboot-test"), func() {
+	var vm VM
 	BeforeEach(func() {
-		Machine.Create(context.Background())
+		vm = startVM()
 	})
 	AfterEach(func() {
-		Machine.Clean()
+		vm.Destroy(func(vm VM) {})
 	})
 
 	It("eventually boots", func() {
-		EventuallyConnects(1200)
+		vm.EventuallyConnects(1200)
 	})
 })

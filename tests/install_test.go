@@ -18,7 +18,7 @@ var stateAssertVM = func(vm VM, query, expected string) {
 	ExpectWithOffset(1, out).To(ContainSubstring(expected))
 }
 
-func testInstall(cloudConfig string) { //, actual interface{}, m types.GomegaMatcher) {
+func testInstall(cloudConfig string, vm VM) { //, actual interface{}, m types.GomegaMatcher) {
 	out, _ := vm.Sudo(fmt.Sprintf("kairos-agent state get persistent.found"))
 	fmt.Printf("persistent.found: %s\n", out)
 	stateAssertVM(vm, "persistent.found", "false")
@@ -42,17 +42,16 @@ func testInstall(cloudConfig string) { //, actual interface{}, m types.GomegaMat
 	vm.EventuallyConnects(1200)
 }
 
-func eventuallyAssert(cmd string, m types.GomegaMatcher) {
+func eventuallyAssert(vm VM, cmd string, m types.GomegaMatcher) {
 	Eventually(func() string {
 		out, _ := vm.Sudo(cmd)
 		return out
 	}, 5*time.Minute, 10*time.Second).Should(m)
 }
 
-var vm VM
-
 var _ = Describe("kairos install test", Label("install-test"), func() {
 
+	var vm VM
 	BeforeEach(func() {
 
 		vm = startVM()
@@ -89,7 +88,7 @@ bundles:
 - rootfs_path: "/usr/local/bin"
   targets:
   - container://quay.io/mocaccino/extra:edgevpn-utils-0.15.0
-`)
+`, vm)
 			fmt.Println("Installation succeeded")
 
 			Eventually(func() string {
@@ -116,7 +115,7 @@ bundles:
 
 		It("with config_url", func() {
 
-			testInstall(`config_url: "https://gist.githubusercontent.com/mudler/6db795bad8f9e29ebec14b6ae331e5c0/raw/01137c458ad62cfcdfb201cae2f8814db702c6f9/testgist.yaml"`)
+			testInstall(`config_url: "https://gist.githubusercontent.com/mudler/6db795bad8f9e29ebec14b6ae331e5c0/raw/01137c458ad62cfcdfb201cae2f8814db702c6f9/testgist.yaml"`, vm)
 
 			fmt.Println("Installation with config_url succeeded")
 
