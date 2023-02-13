@@ -45,7 +45,7 @@ var _ = Describe("k3s upgrade manual test", Label("upgrade-with-cli"), func() {
 
 	Context("install", func() {
 		It("to disk with custom config", func() {
-			err := Machine.SendFile("assets/config.yaml", "/tmp/config.yaml", "0770")
+			err := vm.Scp("assets/config.yaml", "/tmp/config.yaml", "0770")
 			Expect(err).ToNot(HaveOccurred())
 
 			out, _ := vm.Sudo("kairos-agent manual-install --device auto /tmp/config.yaml")
